@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AirTime · school messaging</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    .scroll-smooth::-webkit-scrollbar { width: 8px; }
+    .scroll-smooth::-webkit-scrollbar-track { background: #2f3136; }
+    .scroll-smooth::-webkit-scrollbar-thumb { background: #202225; border-radius: 4px; }
+    .message-bubble { word-wrap: break-word; max-width: 85%; }
+    .student-item:hover { background-color: #36393f !important; }
+    .student-item.active { background-color: #40444b !important; border-left: 3px solid #5865f2; }
+    .auth-input {
+      width: 100%;
+      padding: 10px 14px;
+      background: #202225;
+      border: 1px solid #40444b;
+      border-radius: 6px;
+      color: #dcddde;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .auth-input:focus { border-color: #5865f2; }
+    .auth-input::placeholder { color: #72767d; }
+    .btn-primary {
+      background: #5865f2;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 500;
+      font-size: 14px;
+      transition: background 0.15s;
+      width: 100%;
+    }
+    .btn-primary:hover { background: #4752c4; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body class="bg-[#36393f] font-sans antialiased h-screen flex flex-col text-[#dcddde]">
+
+  <!-- ============================================================ -->
+  <!-- AUTH SCREEN -->
+  <!-- ============================================================ -->
+  <div id="authScreen" class="flex-1 flex items-center justify-center bg-[#36393f] p-4">
+    <div class="w-full max-w-md">
+      <div class="text-center mb-8">
+        <div class="w-20 h-20 bg-[#5865f2] rounded-2xl flex items-center justify-center text-white font-bold text-4xl shadow-xl mx-auto mb-4">A</div>
+        <h1 class="text-2xl font-bold text-white">AirTime</h1>
+        <p class="text-sm text-[#b9bbbe] mt-1">School direct messaging</p>
+      </div>
+
+      <div class="bg-[#2f3136] rounded-lg p-6 shadow-2xl">
+        <div class="flex mb-6 bg-[#202225] rounded-md p-1">
+          <button id="tabLogin" class="flex-1 py-2 text-sm font-medium rounded-md transition bg-[#40444b] text-white">Log In</button>
+          <button id="tabSignup" class="flex-1 py-2 text-sm font-medium rounded-md transition text-[#b9bbbe]">Sign Up</button>
+        </div>
+
+        <div id="authError" class="hidden mb-4 p-3 bg-red-900/40 border border-red-700 rounded-md text-red-300 text-sm"></div>
+
+        <form id="loginForm" class="space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-[#b9bbbe] uppercase tracking-wide mb-1.5">Username</label>
+            <input type="text" id="loginUsername" class="auth-input" placeholder="your.username" required>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-[#b9bbbe] uppercase tracking-wide mb-1.5">Password</label>
+            <input type="password" id="loginPassword" class="auth-input" placeholder="••••••••" required>
+          </div>
+          <button type="submit" class="btn-primary">Log In</button>
+        </form>
+
+        <form id="signupForm" class="space-y-4 hidden">
+          <div>
+            <label class="block text-xs font-medium text-[#b9bbbe] uppercase tracking-wide mb-1.5">Full Name</label>
+            <input type="text" id="signupName" class="auth-input" placeholder="Alex Rivera" required>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-[#b9bbbe] uppercase tracking-wide mb-1.5">Username</label>
+            <input type="text" id="signupUsername" class="auth-input" placeholder="alex.rivera" required>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-[#b9bbbe] uppercase tracking-wide mb-1.5">Grade</label>
+            <select id="signupGrade" class="auth-input" required>
+              <option value="">Select grade...</option>
+              <option value="6">Grade 6</option>
+              <option value="7">Grade 7</option>
+              <option value="8">Grade 8</option>
+              <option value="9">Grade 9</option>
+              <option value="10">Grade 10</option>
+              <option value="11">Grade 11</option>
+              <option value="12">Grade 12</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-[#b9bbbe] uppercase tracking-wide mb-1.5">Password</label>
+            <input type="password" id="signupPassword" class="auth-input" placeholder="At least 6 characters" required minlength="6">
+          </div>
+          <button type="submit" class="btn-primary">Create Account</button>
+        </form>
+      </div>
+
+      <p class="text-center text-[#72767d] text-xs mt-6">Private 1-on-1 messaging for students</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MAIN APP -->
+  <!-- ============================================================ -->
+  <div id="appScreen" class="hidden flex-1 flex-col overflow-hidden">
+
+    <header class="bg-[#202225] border-b border-[#202225] px-6 py-2.5 flex items-center shadow-md flex-shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-[#5865f2] rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">A</div>
+        <h1 class="text-lg font-semibold text-white">AirTime <span class="text-xs font-normal text-[#b9bbbe] ml-1">/ school messaging</span></h1>
+      </div>
+      <div class="ml-auto flex items-center gap-4">
+        <span class="text-sm text-[#b9bbbe]"><i class="fas fa-user-graduate mr-1"></i> <span id="meName">—</span> · Grade <span id="meGrade">—</span></span>
+        <div id="meAvatar" class="w-8 h-8 rounded-full bg-[#5865f2] flex items-center justify-center text-white font-medium text-sm">?</div>
+        <button id="logoutBtn" class="text-[#b9bbbe] hover:text-white transition text-sm ml-2" title="Log out">
+          <i class="fas fa-sign-out-alt"></i>
+        </button>
+      </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+
+      <aside class="w-80 flex-shrink-0 bg-[#2f3136] border-r border-[#202225] flex flex-col overflow-hidden">
+        <div class="p-3 border-b border-[#202225]">
+          <div class="relative">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-[#72767d] text-xs"></i>
+            <input type="text" id="directorySearch" placeholder="Find a student..." 
+                   class="w-full pl-8 pr-3 py-2 bg-[#202225] border-0 rounded-md text-sm text-[#dcddde] placeholder-[#72767d] focus:ring-1 focus:ring-[#5865f2] outline-none transition">
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto scroll-smooth p-1.5" id="studentList">
+          <div id="loadingDirectory" class="flex items-center justify-center h-full text-[#72767d] text-sm">
+            <i class="fas fa-spinner fa-spin mr-2"></i> Loading students...
+          </div>
+          <div id="emptyDirectory" class="hidden flex-col items-center justify-center h-full text-center text-[#72767d] px-6">
+            <div class="w-16 h-16 bg-[#40444b] rounded-full flex items-center justify-center mb-3">
+              <i class="fas fa-users text-2xl text-[#72767d]"></i>
+            </div>
+            <p class="text-sm font-medium text-[#b9bbbe]">No students yet</p>
+            <p class="text-xs mt-1 max-w-[200px]">When other students sign up, they'll appear here.</p>
+          </div>
+          <div id="noResults" class="hidden px-4 py-8 text-center text-[#72767d] text-sm">
+            <i class="fas fa-user-slash mr-1"></i> No students found
+          </div>
+        </div>
+      </aside>
+
+      <main class="flex-1 flex flex-col bg-[#36393f] overflow-hidden">
+        <div id="chatHeader" class="bg-[#36393f] border-b border-[#202225] px-6 py-3 flex items-center gap-4 flex-shrink-0 shadow-sm">
+          <div id="headerAvatar" class="w-9 h-9 rounded-full bg-[#40444b] text-[#b9bbbe] flex items-center justify-center font-medium text-base">
+            <i class="fas fa-comment"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-semibold text-white" id="headerName">Select a student</h2>
+            <p class="text-xs text-[#b9bbbe]" id="headerUsername">Pick someone from the directory</p>
+          </div>
+          <div id="headerStatus" class="ml-auto hidden items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-green-400"></span>
+            <span class="text-xs text-[#b9bbbe]">online</span>
+          </div>
+        </div>
+
+        <div id="messageContainer" class="flex-1 overflow-y-auto scroll-smooth px-6 py-4 space-y-2">
+          <div id="emptyChatPlaceholder" class="h-full flex flex-col items-center justify-center text-center text-[#72767d]">
+            <div class="w-20 h-20 bg-[#40444b] rounded-full flex items-center justify-center mb-4">
+              <i class="fas fa-comments text-3xl text-[#72767d]"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-[#b9bbbe] mb-1">Your messages</h3>
+            <p class="text-sm max-w-xs">Pick a student from the directory to start a private conversation.</p>
+          </div>
+        </div>
+
+        <div class="bg-[#36393f] border-t border-[#202225] p-4 flex-shrink-0">
+          <div class="flex items-center gap-3">
+            <input type="text" id="messageInput" placeholder="Message..." 
+                   class="flex-1 bg-[#40444b] border-0 rounded-lg px-4 py-3 text-sm text-[#dcddde] placeholder-[#72767d] focus:ring-1 focus:ring-[#5865f2] outline-none transition"
+                   disabled>
+            <button id="sendButton" class="bg-[#5865f2] hover:bg-[#4752c4] text-white rounded-lg p-3 w-12 h-12 flex items-center justify-center shadow-md transition disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+              <i class="fas fa-paper-plane text-lg"></i>
+            </button>
+          </div>
+          <p class="text-[10px] text-[#72767d] mt-1.5 ml-1">Messages are private between you and the selected student.</p>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      // ---------- STATE ----------
+      let currentUser = null;
+      let selectedUser = null;
+      let allStudents = [];
+      let socket = null;
+      let onlineUsers = new Set();
+
+      // ---------- DOM ----------
+      const authScreen = document.getElementById('authScreen');
+      const appScreen = document.getElementById('appScreen');
+      const tabLogin = document.getElementById('tabLogin');
+      const tabSignup = document.getElementById('tabSignup');
+      const loginForm = document.getElementById('loginForm');
+      const signupForm = document.getElementById('signupForm');
+      const authError = document.getElementById('authError');
+
+      const meName = document.getElementById('meName');
+      const meGrade = document.getElementById('meGrade');
+      const meAvatar = document.getElementById('meAvatar');
+      const logoutBtn = document.getElementById('logoutBtn');
+
+      const studentListEl = document.getElementById('studentList');
+      const loadingDirectory = document.getElementById('loadingDirectory');
+      const emptyDirectory = document.getElementById('emptyDirectory');
+      const noResultsEl = document.getElementById('noResults');
+      const searchInput = document.getElementById('directorySearch');
+
+      const messageContainer = document.getElementById('messageContainer');
+      const emptyPlaceholder = document.getElementById('emptyChatPlaceholder');
+      const headerName = document.getElementById('headerName');
+      const headerUsername = document.getElementById('headerUsername');
+      const headerAvatar = document.getElementById('headerAvatar');
+      const headerStatus = document.getElementById('headerStatus');
+      const messageInput = document.getElementById('messageInput');
+      const sendButton = document.getElementById('sendButton');
+
+      // ---------- HELPERS ----------
+      function showError(msg) { authError.textContent = msg; authError.classList.remove('hidden'); }
+      function clearError() { authError.classList.add('hidden'); }
+      function initials(name) { return String(name).split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase(); }
+      function escapeHtml(unsafe) {
+        return String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+      }
+      function scrollToBottom() { messageContainer.scrollTop = messageContainer.scrollHeight; }
+
+      // ---------- TABS ----------
+      tabLogin.addEventListener('click', () => {
+        tabLogin.classList.add('bg-[#40444b]', 'text-white'); tabLogin.classList.remove('text-[#b9bbbe]');
+        tabSignup.classList.remove('bg-[#40444b]', 'text-white'); tabSignup.classList.add('text-[#b9bbbe]');
+        loginForm.classList.remove('hidden'); signupForm.classList.add('hidden'); clearError();
+      });
+      tabSignup.addEventListener('click', () => {
+        tabSignup.classList.add('bg-[#40444b]', 'text-white'); tabSignup.classList.remove('text-[#b9bbbe]');
+        tabLogin.classList.remove('bg-[#40444b]', 'text-white'); tabLogin.classList.add('text-[#b9bbbe]');
+        signupForm.classList.remove('hidden'); loginForm.classList.add('hidden'); clearError();
+      });
+
+      // ---------- SIGNUP ----------
+      signupForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError();
+        const btn = signupForm.querySelector('button[type="submit"]');
+        btn.disabled = true; btn.textContent = 'Creating...';
+        try {
+          const res = await fetch('/api/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: document.getElementById('signupName').value.trim(),
+              username: document.getElementById('signupUsername').value.trim(),
+              password: document.getElementById('signupPassword').value,
+              grade: parseInt(document.getElementById('signupGrade').value, 10)
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Signup failed');
+          currentUser = data;
+          await enterApp();
+        } catch (err) { showError(err.message); }
+        finally { btn.disabled = false; btn.textContent = 'Create Account'; }
+      });
+
+      // ---------- LOGIN ----------
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError();
+        const btn = loginForm.querySelector('button[type="submit"]');
+        btn.disabled = true; btn.textContent = 'Logging in...';
+        try {
+          const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: document.getElementById('loginUsername').value.trim(),
+              password: document.getElementById('loginPassword').value
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Login failed');
+          currentUser = data;
+          await enterApp();
+        } catch (err) { showError(err.message); }
+        finally { btn.disabled = false; btn.textContent = 'Log In'; }
+      });
+
+      // ---------- LOGOUT ----------
+      logoutBtn.addEventListener('click', async () => {
+        await fetch('/api/logout', { method: 'POST' });
+        if (socket) socket.disconnect();
+        currentUser = null; selectedUser = null; allStudents = []; onlineUsers.clear();
+        appScreen.classList.add('hidden'); appScreen.classList.remove('flex');
+        authScreen.classList.remove('hidden');
+        messageInput.value = '';
+        loginForm.reset(); signupForm.reset();
+      });
+
+      // ---------- ENTER APP ----------
+      async function enterApp() {
+        authScreen.classList.add('hidden');
+        appScreen.classList.remove('hidden');
+        appScreen.classList.add('flex');
+
+        meName.textContent = currentUser.name;
+        meGrade.textContent = currentUser.grade;
+        meAvatar.textContent = initials(currentUser.name);
+
+        await loadDirectory();
+        connectSocket();
+
+        messageInput.disabled = true;
+        sendButton.disabled = true;
+        emptyPlaceholder.style.display = 'flex';
+      }
+
+      // ---------- DIRECTORY ----------
+      async function loadDirectory() {
+        loadingDirectory.classList.remove('hidden');
+        emptyDirectory.classList.add('hidden');
+        noResultsEl.classList.add('hidden');
+
+        try {
+          const res = await fetch('/api/users');
+          if (!res.ok) throw new Error('Failed to load directory');
+          allStudents = await res.json();
+          renderDirectory();
+        } catch (err) {
+          console.error(err);
+          loadingDirectory.innerHTML = '<span class="text-red-400 text-sm">Failed to load students</span>';
+        }
+      }
+
+      function renderDirectory() {
+        loadingDirectory.classList.add('hidden');
+        studentListEl.querySelectorAll('.student-item').forEach(el => el.remove());
+
+        if (allStudents.length === 0) {
+          emptyDirectory.classList.remove('hidden');
+          emptyDirectory.classList.add('flex');
+          return;
+        }
+        emptyDirectory.classList.add('hidden');
+        emptyDirectory.classList.remove('flex');
+
+        allStudents.forEach(student => {
+          const item = document.createElement('div');
+          item.className = 'student-item px-3 py-2.5 rounded-lg flex items-center gap-3 cursor-pointer transition';
+          item.dataset.username = student.username;
+          item.dataset.name = student.name;
+          item.dataset.grade = student.grade;
+
+          const isOnline = onlineUsers.has(student.username);
+          const dotColor = isOnline ? 'bg-green-400' : 'bg-[#72767d]';
+
+          item.innerHTML = `
+            <div class="w-9 h-9 rounded-full bg-[#5865f2] text-white flex items-center justify-center font-medium text-sm">${initials(student.name)}</div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-[#dcddde] truncate">${escapeHtml(student.name)}</p>
+              <p class="text-xs text-[#b9bbbe] truncate">@${escapeHtml(student.username)} · Grade ${student.grade}</p>
+            </div>
+            <span class="w-2 h-2 rounded-full ${dotColor}"></span>
+          `;
+          item.addEventListener('click', () => openChatWith(student));
+          studentListEl.appendChild(item);
+        });
+
+        filterStudents();
+      }
+
+      // ---------- SEARCH ----------
+      function filterStudents() {
+        const query = searchInput.value.trim().toLowerCase();
+        const items = studentListEl.querySelectorAll('.student-item');
+        let visibleCount = 0;
+
+        items.forEach(item => {
+          const name = item.dataset.name.toLowerCase();
+          const username = item.dataset.username.toLowerCase();
+          const grade = item.dataset.grade || '';
+          const match = name.includes(query) || username.includes(query) || grade.includes(query);
+          item.style.display = match ? 'flex' : 'none';
+          if (match) visibleCount++;
+        });
+
+        if (allStudents.length === 0) {
+          emptyDirectory.classList.remove('hidden');
+          emptyDirectory.classList.add('flex');
+          noResultsEl.classList.add('hidden');
+          return;
+        }
+
+        if (visibleCount === 0 && query.length > 0) {
+          noResultsEl.classList.remove('hidden');
+          emptyDirectory.classList.add('hidden');
+          emptyDirectory.classList.remove('flex');
+        } else {
+          noResultsEl.classList.add('hidden');
+          emptyDirectory.classList.add('hidden');
+          emptyDirectory.classList.remove('flex');
+        }
+      }
+      searchInput.addEventListener('input', filterStudents);
+
+      // ---------- SOCKET ----------
+      function connectSocket() {
+        if (socket) socket.disconnect();
+        socket = io();
+
+        socket.on('connect', () => console.log('✅ Socket connected'));
+
+        socket.on('online users', (usernames) => {
+          onlineUsers = new Set(usernames);
+          if (selectedUser) updateHeaderStatus();
+          document.querySelectorAll('.student-item').forEach(item => {
+            const dot = item.querySelector('span.rounded-full');
+            if (!dot) return;
+            const isOnline = onlineUsers.has(item.dataset.username);
+            dot.className = `w-2 h-2 rounded-full ${isOnline ? 'bg-green-400' : 'bg-[#72767d]'}`;
+          });
+        });
+
+        socket.on('private message', (msg) => {
+          if (!selectedUser) return;
+          const betweenUs =
+            (msg.sender === currentUser.username && msg.receiver === selectedUser.username) ||
+            (msg.sender === selectedUser.username && msg.receiver === currentUser.username);
+          if (betweenUs) { appendMessageToUI(msg); scrollToBottom(); }
+        });
+
+        socket.on('directory changed', () => { loadDirectory(); });
+
+        socket.on('connect_error', (err) => console.error('Socket error:', err.message));
+      }
+
+      // ---------- OPEN CHAT ----------
+      async function openChatWith(user) {
+        selectedUser = user;
+        headerName.textContent = user.name;
+        headerUsername.textContent = `@${user.username} · Grade ${user.grade}`;
+        headerAvatar.textContent = initials(user.name);
+        headerAvatar.className = 'w-9 h-9 rounded-full bg-[#5865f2] text-white flex items-center justify-center font-medium text-base';
+        updateHeaderStatus();
+
+        document.querySelectorAll('.student-item').forEach(el => el.classList.remove('active'));
+        const activeEl = [...document.querySelectorAll('.student-item')].find(el => el.dataset.username === user.username);
+        if (activeEl) activeEl.classList.add('active');
+
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+        messageInput.focus();
+
+        while (messageContainer.firstChild) messageContainer.removeChild(messageContainer.firstChild);
+
+        try {
+          const res = await fetch(`/api/messages/${encodeURIComponent(user.username)}`);
+          if (!res.ok) throw new Error('Failed to load messages');
+          const history = await res.json();
+
+          if (history.length === 0) {
+            const hint = document.createElement('div');
+            hint.className = 'text-center text-[#72767d] text-sm py-10';
+            hint.id = 'chatHint';
+            hint.textContent = `Say hi to ${user.name}!`;
+            messageContainer.appendChild(hint);
+          } else {
+            history.forEach(appendMessageToUI);
+            scrollToBottom();
+          }
+        } catch (err) {
+          console.error(err);
+          const errEl = document.createElement('div');
+          errEl.className = 'text-center text-red-400 text-sm py-10';
+          errEl.textContent = 'Could not load message history.';
+          messageContainer.appendChild(errEl);
+        }
+      }
+
+      function updateHeaderStatus() {
+        if (!selectedUser) return;
+        const isOnline = onlineUsers.has(selectedUser.username);
+        headerStatus.classList.remove('hidden');
+        headerStatus.classList.add('flex');
+        headerStatus.innerHTML = isOnline
+          ? '<span class="w-2 h-2 rounded-full bg-green-400"></span><span class="text-xs text-[#b9bbbe]">online</span>'
+          : '<span class="w-2 h-2 rounded-full bg-[#72767d]"></span><span class="text-xs text-[#b9bbbe]">offline</span>';
+      }
+
+      // ---------- APPEND MESSAGE ----------
+      function appendMessageToUI(msg) {
+        if (emptyPlaceholder && emptyPlaceholder.parentNode) emptyPlaceholder.style.display = 'none';
+        const hint = document.getElementById('chatHint');
+        if (hint) hint.remove();
+
+        const isMine = msg.sender === currentUser.username;
+        const wrap = document.createElement('div');
+        wrap.className = `flex ${isMine ? 'justify-end' : 'justify-start'} w-full`;
+
+        const bubble = document.createElement('div');
+        bubble.className = `message-bubble px-4 py-2.5 rounded-2xl shadow-sm text-sm ${
+          isMine ? 'bg-[#5865f2] text-white rounded-br-md' : 'bg-[#40444b] text-[#dcddde] rounded-bl-md'
+        }`;
+
+        const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+        bubble.innerHTML = `
+          <p>${escapeHtml(msg.text)}</p>
+          <span class="text-[10px] ${isMine ? 'text-[#b9bbbe]' : 'text-[#72767d]'} block text-right mt-1">${time}</span>
+        `;
+
+        wrap.appendChild(bubble);
+        messageContainer.appendChild(wrap);
+      }
+
+      // ---------- SEND ----------
+      function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text || !selectedUser || !socket) return;
+        socket.emit('private message', { toUsername: selectedUser.username, text });
+        messageInput.value = '';
+        messageInput.focus();
+      }
+      sendButton.addEventListener('click', sendMessage);
+      messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+      });
+
+      // ---------- INIT ----------
+      (async function init() {
+        try {
+          const res = await fetch('/api/me');
+          if (res.ok) {
+            currentUser = await res.json();
+            await enterApp();
+          }
+        } catch { /* stay on auth screen */ }
+      })();
+
+    })();
+  </script>
+</body>
+</html>

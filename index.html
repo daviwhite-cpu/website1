@@ -1,6 +1,483 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AirTime</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  body { background:#36393f; color:#dcddde; font-family: system-ui, sans-serif; }
+  .input { width:100%; padding:10px 14px; background:#202225; border:1px solid #40444b;
+           border-radius:6px; color:#dcddde; font-size:14px; outline:none; }
+  .input:focus { border-color:#5865f2; }
+  .input::placeholder { color:#72767d; }
+  .btn { background:#5865f2; color:white; padding:11px; border-radius:6px;
+         font-weight:600; font-size:14px; width:100%; cursor:pointer; border:none; }
+  .btn:hover { background:#4752c4; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .tab-active { background:#40444b; color:white; }
+  .tab-inactive { color:#b9bbbe; }
+  .student-item:hover { background:#36393f; }
+  .student-item.active { background:#40444b; border-left:3px solid #5865f2; }
+</style>
+</head>
+<body class="h-screen flex flex-col">
+
+<!-- ================= AUTH ================= -->
+<div id="authScreen" class="flex-1 flex items-center justify-center p-4">
+  <div class="w-full max-w-md">
+    <div class="text-center mb-6">
+      <div class="w-16 h-16 bg-[#5865f2] rounded-2xl inline-flex items-center justify-center text-white font-bold text-3xl mb-3">A</div>
+      <h1 class="text-2xl font-bold text-white">AirTime</h1>
+      <p class="text-sm text-[#b9bbbe]">School direct messaging</p>
+    </div>
+
+    <div class="bg-[#2f3136] rounded-lg p-6 shadow-2xl">
+      <div class="flex mb-5 bg-[#202225] rounded-md p-1">
+        <button type="button" id="tabLogin" class="flex-1 py-2 text-sm font-medium rounded-md tab-active">Log In</button>
+        <button type="button" id="tabSignup" class="flex-1 py-2 text-sm font-medium rounded-md tab-inactive">Sign Up</button>
+      </div>
+
+      <div id="banner" class="hidden mb-4 p-3 rounded-md text-sm"></div>
+
+      <!-- LOGIN -->
+      <form id="loginForm" class="space-y-3">
+        <input id="loginUser" class="input" placeholder="Username" autocomplete="username" required>
+        <input id="loginPass" class="input" type="password" placeholder="Password" autocomplete="current-password" required>
+        <button type="submit" id="loginBtn" class="btn">Log In</button>
+      </form>
+
+      <!-- SIGNUP -->
+      <form id="signupForm" class="space-y-3 hidden">
+        <input id="signupName" class="input" placeholder="Full name" required>
+        <input id="signupUser" class="input" placeholder="Username (no spaces)" required>
+        <select id="signupGrade" class="input" required>
+          <option value="">Select grade</option>
+          <option value="6">Grade 6</option><option value="7">Grade 7</option>
+          <option value="8">Grade 8</option><option value="9">Grade 9</option>
+          <option value="10">Grade 10</option><option value="11">Grade 11</option>
+          <option value="12">Grade 12</option>
+        </select>
+        <input id="signupPass" class="input" type="password" placeholder="Password (6+ chars)" minlength="6" required>
+        <button type="submit" id="signupBtn" class="btn">Create Account</button>
+      </form>
+
+      <hr class="my-5 border-[#40444b]">
+      <p class="text-xs text-[#72767d] mb-2 text-center">Testing quickly?</p>
+      <button type="button" id="quickBtn" class="btn" style="background:#3ba55d">Create Test Account & Log In</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="appScreen" style="display:none" class="flex-1 flex-col overflow-hidden">
+  <header class="bg-[#202225] px-6 py-2.5 flex items-center flex-shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-[#5865f2] rounded-lg flex items-center justify-center text-white font-bold">A</div>
+      <h1 class="font-semibold text-white">AirTime</h1>
+    </div>
+    <div class="ml-auto flex items-center gap-4">
+      <span class="text-sm text-[#b9bbbe]"><span id="meName">—</span> · Grade <span id="meGrade">—</span></span>
+      <div id="meAvatar" class="w-8 h-8 rounded-full bg-[#5865f2] flex items-center justify-center text-white text-sm font-medium">?</div>
+      <button type="button" id="logoutBtn" class="text-[#b9bbbe] hover:text-white"><i class="fas fa-sign-out-alt"></i></button>
+    </div>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+    <aside class="w-80 bg-[#2f3136] border-r border-[#202225] flex flex-col overflow-hidden">
+      <div class="p-3 border-b border-[#202225]">
+        <input id="search" class="w-full px-3 py-2 bg-[#202225] rounded-md text-sm text-[#dcddde] placeholder-[#72767d] outline-none" placeholder="Find a student...">
+      </div>
+      <div id="studentList" class="flex-1 overflow-y-auto p-1.5"></div>
+    </aside>
+
+    <main class="flex-1 flex flex-col bg-[#36393f] overflow-hidden">
+      <div class="border-b border-[#202225] px-6 py-3 flex items-center gap-4 flex-shrink-0">
+        <div id="hAvatar" class="w-9 h-9 rounded-full bg-[#40444b] text-[#b9bbbe] flex items-center justify-center"><i class="fas fa-comment"></i></div>
+        <div>
+          <h2 id="hName" class="font-semibold text-white">Select a student</h2>
+          <p id="hUser" class="text-xs text-[#b9bbbe]">Pick someone from the directory</p>
+        </div>
+        <div id="hStatus" class="ml-auto hidden items-center gap-2"></div>
+      </div>
+
+      <div id="messages" class="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+        <div id="emptyChat" class="h-full flex flex-col items-center justify-center text-center text-[#72767d]">
+          <i class="fas fa-comments text-4xl mb-3"></i>
+          <p class="font-medium text-[#b9bbbe]">Your messages</p>
+          <p class="text-sm">Pick a student to start chatting.</p>
+        </div>
+      </div>
+
+      <div class="border-t border-[#202225] p-4 flex-shrink-0">
+        <div class="flex gap-3">
+          <input id="msgInput" class="flex-1 bg-[#40444b] rounded-lg px-4 py-3 text-sm text-[#dcddde] placeholder-[#72767d] outline-none" placeholder="Message..." disabled>
+          <button type="button" id="sendBtn" class="bg-[#5865f2] hover:bg-[#4752c4] text-white rounded-lg w-12 h-12 flex items-center justify-center" disabled>
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ---------- STATE ----------
+  var currentUser = null;
+  var selectedUser = null;
+  var allStudents = [];
+  var socket = null;
+  var online = new Set();
+
+  // ---------- SHORTCUTS ----------
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  }
+  function initials(n) {
+    return String(n).split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+  }
+
+  // ---------- BANNER ----------
+  function banner(msg, type) {
+    var el = $('banner');
+    el.className = 'mb-4 p-3 rounded-md text-sm ' + (type === 'success'
+      ? 'bg-green-900/40 border border-green-700 text-green-300'
+      : 'bg-red-900/40 border border-red-700 text-red-300');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  function clearBanner() { $('banner').classList.add('hidden'); }
+
+  // ---------- TAB SWITCH ----------
+  $('tabLogin').onclick = function() {
+    $('tabLogin').className = 'flex-1 py-2 text-sm font-medium rounded-md tab-active';
+    $('tabSignup').className = 'flex-1 py-2 text-sm font-medium rounded-md tab-inactive';
+    $('loginForm').classList.remove('hidden');
+    $('signupForm').classList.add('hidden');
+    clearBanner();
+  };
+  $('tabSignup').onclick = function() {
+    $('tabSignup').className = 'flex-1 py-2 text-sm font-medium rounded-md tab-active';
+    $('tabLogin').className = 'flex-1 py-2 text-sm font-medium rounded-md tab-inactive';
+    $('signupForm').classList.remove('hidden');
+    $('loginForm').classList.add('hidden');
+    clearBanner();
+  };
+
+  // ---------- POST HELPER ----------
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body)
+    }).then(function(res) {
+      return res.json().catch(function(){ return {}; }).then(function(data) {
+        return { ok: res.ok, status: res.status, data: data };
+      });
+    });
+  }
+
+  // ---------- LOGIN ----------
+  $('loginForm').onsubmit = function(e) {
+    e.preventDefault();
+    clearBanner();
+    var btn = $('loginBtn');
+    btn.disabled = true; btn.textContent = 'Logging in...';
+    var username = $('loginUser').value.trim();
+    var password = $('loginPass').value;
+
+    post('/api/login', { username: username, password: password })
+      .then(function(r) {
+        if (!r.ok) {
+          throw new Error(r.data.error || ('Login failed (HTTP ' + r.status + ')'));
+        }
+        currentUser = r.data;
+        return enterApp();
+      })
+      .catch(function(err) {
+        banner(err.message || 'Could not connect to server. Is `node server.js` running?');
+      })
+      .finally(function() {
+        btn.disabled = false; btn.textContent = 'Log In';
+      });
+  };
+
+  // ---------- SIGNUP ----------
+  $('signupForm').onsubmit = function(e) {
+    e.preventDefault();
+    clearBanner();
+    var btn = $('signupBtn');
+    btn.disabled = true; btn.textContent = 'Creating...';
+
+    var payload = {
+      name: $('signupName').value.trim(),
+      username: $('signupUser').value.trim().toLowerCase(),
+      password: $('signupPass').value,
+      grade: parseInt($('signupGrade').value, 10)
+    };
+
+    if (!payload.name || !payload.username || !payload.password || !payload.grade) {
+      banner('Please fill in every field.');
+      btn.disabled = false; btn.textContent = 'Create Account';
+      return;
+    }
+
+    post('/api/signup', payload)
+      .then(function(r) {
+        if (!r.ok) throw new Error(r.data.error || ('Signup failed (HTTP ' + r.status + ')'));
+        currentUser = r.data;
+        return enterApp();
+      })
+      .catch(function(err) {
+        banner(err.message || 'Could not connect to server. Is `node server.js` running?');
+      })
+      .finally(function() {
+        btn.disabled = false; btn.textContent = 'Create Account';
+      });
+  };
+
+  // ---------- QUICK TEST ACCOUNT ----------
+  $('quickBtn').onclick = function() {
+    clearBanner();
+    var btn = $('quickBtn');
+    btn.disabled = true; btn.textContent = 'Creating...';
+
+    var suffix = Math.floor(Math.random() * 100000);
+    var payload = {
+      name: 'Test Student ' + suffix,
+      username: 'test' + suffix,
+      password: 'test123',
+      grade: 11
+    };
+
+    post('/api/signup', payload)
+      .then(function(r) {
+        if (!r.ok) throw new Error(r.data.error || ('HTTP ' + r.status));
+        currentUser = r.data;
+        return enterApp();
+      })
+      .catch(function(err) {
+        banner('Quick account failed: ' + err.message);
+      })
+      .finally(function() {
+        btn.disabled = false; btn.textContent = 'Create Test Account & Log In';
+      });
+  };
+
+  // ---------- ENTER APP ----------
+  function enterApp() {
+    $('authScreen').style.display = 'none';
+    $('appScreen').style.display = 'flex';
+
+    $('meName').textContent = currentUser.name;
+    $('meGrade').textContent = currentUser.grade;
+    $('meAvatar').textContent = initials(currentUser.name);
+
+    loadDirectory();
+    connectSocket();
+
+    $('msgInput').disabled = true;
+    $('sendBtn').disabled = true;
+  }
+
+  // ---------- LOGOUT ----------
+  $('logoutBtn').onclick = function() {
+    fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+    if (socket) socket.disconnect();
+    currentUser = null; selectedUser = null; allStudents = []; online.clear();
+    $('appScreen').style.display = 'none';
+    $('authScreen').style.display = 'flex';
+    $('msgInput').value = '';
+    $('search').value = '';
+    $('messages').innerHTML = '<div id="emptyChat" class="h-full flex flex-col items-center justify-center text-center text-[#72767d]"><i class="fas fa-comments text-4xl mb-3"></i><p class="font-medium text-[#b9bbbe]">Your messages</p><p class="text-sm">Pick a student to start chatting.</p></div>';
+  };
+
+  // ---------- LOAD DIRECTORY ----------
+  function loadDirectory() {
+    fetch('/api/users', { credentials: 'same-origin' })
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(users) {
+        allStudents = users;
+        renderDirectory();
+      })
+      .catch(function(err) {
+        console.error('Directory load failed:', err);
+        $('studentList').innerHTML = '<div class="p-4 text-red-400 text-sm text-center">Could not load students. Server error.</div>';
+      });
+  }
+
+  function renderDirectory() {
+    var list = $('studentList');
+    list.innerHTML = '';
+
+    if (allStudents.length === 0) {
+      list.innerHTML = '<div class="p-6 text-center text-[#72767d] text-sm"><i class="fas fa-users text-2xl mb-2 block"></i>No other students yet.<br>Sign up in another window.</div>';
+      return;
+    }
+
+    allStudents.forEach(function(s) {
+      var isOnline = online.has(s.username);
+      var el = document.createElement('div');
+      el.className = 'student-item px-3 py-2 rounded-lg flex items-center gap-3 cursor-pointer';
+      el.dataset.username = s.username;
+      el.dataset.name = s.name;
+      el.dataset.grade = s.grade;
+      el.innerHTML = '<div class="w-9 h-9 rounded-full bg-[#5865f2] text-white flex items-center justify-center text-sm font-medium">' + initials(s.name) + '</div>' +
+        '<div class="flex-1 min-w-0"><p class="text-sm text-[#dcddde] truncate">' + esc(s.name) + '</p>' +
+        '<p class="text-xs text-[#b9bbbe] truncate">@' + esc(s.username) + ' · G' + s.grade + '</p></div>' +
+        '<span class="w-2 h-2 rounded-full ' + (isOnline ? 'bg-green-400' : 'bg-[#72767d]') + '"></span>';
+      el.onclick = function() { openChat(s); };
+      list.appendChild(el);
+    });
+  }
+
+  // ---------- SEARCH ----------
+  $('search').oninput = function() {
+    var q = this.value.trim().toLowerCase();
+    var items = $('studentList').querySelectorAll('.student-item');
+    items.forEach(function(el) {
+      var match = !q || el.dataset.name.toLowerCase().includes(q) ||
+                  el.dataset.username.toLowerCase().includes(q) ||
+                  String(el.dataset.grade).includes(q);
+      el.style.display = match ? 'flex' : 'none';
+    });
+  };
+
+  // ---------- SOCKET ----------
+  function connectSocket() {
+    if (socket) { socket.disconnect(); }
+    try { socket = io(); } catch (e) { console.warn('Socket.io failed:', e); return; }
+
+    socket.on('connect', function() { console.log('socket connected'); });
+    socket.on('connect_error', function(err) { console.warn('socket error:', err.message); });
+
+    socket.on('online users', function(usernames) {
+      online = new Set(usernames);
+      if (selectedUser) updateStatus();
+      renderDirectory();
+      if (selectedUser) {
+        var active = $('studentList').querySelector('.student-item[data-username="' + selectedUser.username + '"]');
+        if (active) active.classList.add('active');
+      }
+    });
+
+    socket.on('private message', function(msg) {
+      if (!selectedUser) return;
+      var mine = (msg.sender === currentUser.username && msg.receiver === selectedUser.username) ||
+                 (msg.sender === selectedUser.username && msg.receiver === currentUser.username);
+      if (mine) { appendMessage(msg); scrollBottom(); }
+    });
+
+    socket.on('directory changed', function() { loadDirectory(); });
+  }
+
+  // ---------- OPEN CHAT ----------
+  function openChat(user) {
+    selectedUser = user;
+    $('hName').textContent = user.name;
+    $('hUser').textContent = '@' + user.username + ' · Grade ' + user.grade;
+    $('hAvatar').textContent = initials(user.name);
+    $('hAvatar').className = 'w-9 h-9 rounded-full bg-[#5865f2] text-white flex items-center justify-center font-medium';
+    updateStatus();
+
+    $('studentList').querySelectorAll('.student-item').forEach(function(el) { el.classList.remove('active'); });
+    var active = $('studentList').querySelector('.student-item[data-username="' + user.username + '"]');
+    if (active) active.classList.add('active');
+
+    $('msgInput').disabled = false;
+    $('sendBtn').disabled = false;
+    $('msgInput').focus();
+
+    $('messages').innerHTML = '';
+
+    fetch('/api/messages/' + encodeURIComponent(user.username), { credentials: 'same-origin' })
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(history) {
+        if (history.length === 0) {
+          $('messages').innerHTML = '<div class="text-center text-[#72767d] text-sm py-10">Say hi to ' + esc(user.name) + '!</div>';
+        } else {
+          history.forEach(appendMessage);
+          scrollBottom();
+        }
+      })
+      .catch(function(err) {
+        console.error('History failed:', err);
+        $('messages').innerHTML = '<div class="text-center text-red-400 text-sm py-10">Could not load history.</div>';
+      });
+  }
+
+  function updateStatus() {
+    if (!selectedUser) return;
+    var isOnline = online.has(selectedUser.username);
+    $('hStatus').classList.remove('hidden');
+    $('hStatus').classList.add('flex');
+    $('hStatus').innerHTML = isOnline
+      ? '<span class="w-2 h-2 rounded-full bg-green-400"></span><span class="text-xs text-[#b9bbbe]">online</span>'
+      : '<span class="w-2 h-2 rounded-full bg-[#72767d]"></span><span class="text-xs text-[#b9bbbe]">offline</span>';
+  }
+
+  // ---------- RENDER MESSAGE ----------
+  function appendMessage(msg) {
+    var isMine = msg.sender === currentUser.username;
+    var wrap = document.createElement('div');
+    wrap.className = 'flex ' + (isMine ? 'justify-end' : 'justify-start') + ' w-full';
+
+    var bubble = document.createElement('div');
+    bubble.className = 'px-4 py-2.5 rounded-2xl text-sm max-w-[80%] ' +
+      (isMine ? 'bg-[#5865f2] text-white rounded-br-md' : 'bg-[#40444b] text-[#dcddde] rounded-bl-md');
+
+    var time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    bubble.innerHTML = '<p>' + esc(msg.text) + '</p>' +
+      '<span class="text-[10px] ' + (isMine ? 'text-[#b9bbbe]' : 'text-[#72767d]') + ' block text-right mt-1">' + time + '</span>';
+
+    wrap.appendChild(bubble);
+    $('messages').appendChild(wrap);
+  }
+
+  function scrollBottom() {
+    $('messages').scrollTop = $('messages').scrollHeight;
+  }
+
+  // ---------- SEND ----------
+  function sendMessage() {
+    var text = $('msgInput').value.trim();
+    if (!text || !selectedUser) return;
+    if (!socket || !socket.connected) {
+      banner('Not connected to server. Refresh the page.');
+      return;
+    }
+    socket.emit('private message', { toUsername: selectedUser.username, text: text });
+    $('msgInput').value = '';
+    $('msgInput').focus();
+  }
+  $('sendBtn').onclick = sendMessage;
+  $('msgInput').onkeydown = function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+  };
+
+  // ---------- BOOT ----------
+  fetch('/api/me', { credentials: 'same-origin' })
+    .then(function(r) {
+      if (r.ok) return r.json().then(function(u) { currentUser = u; enterApp(); });
+    })
+    .catch(function() { /* stay on auth */ });
+
+})();
+</script>
+</body>
+</html>
+
+On Thu, Oct 29, 2026, 4:41 PM David White <davideugenewhite2011@gmail.com> wrote:
+<!DOCTYPE html>
+<html lang="en">
+<head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AirTime · school messaging</title>
@@ -557,3 +1034,6 @@
   </script>
 </body>
 </html>
+
+
+
